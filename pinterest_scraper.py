@@ -18,7 +18,7 @@ import os
 import sys
 
 # --- CONFIGURATION ---
-PROFILE_URL = "https://www.pinterest.com/purba43w/_created/"
+PROFILE_URL = "https://www.pinterest.com/flavorspire/_created"
 OUTPUT_DIR = "output"
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "pinterest_final_data.csv")
 
