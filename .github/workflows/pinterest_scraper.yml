@@ -43,7 +43,7 @@ jobs:
         if: always()  # Chahe error ho ya na ho, results upload honge
         with:
           name: pinterest-data-${{ github.run_number }}
-          path: pinterest_turbo_data.csv
+          path: output/  # Ab ye output folder ko upload karega
           retention-days: 30  # 30 din tak results save rahenge
       
       # Step 6: Commit results back to repository (optional)
@@ -53,6 +53,6 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add pinterest_turbo_data.csv || true
+          git add output/pinterest_turbo_data.csv || true
           git diff --quiet && git diff --staged --quiet || git commit -m "Updated Pinterest data - Run #${{ github.run_number }}"
           git push || true
