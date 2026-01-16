@@ -18,16 +18,16 @@ import os
 import sys
 
 # --- CONFIGURATION ---
-PROFILE_URL = "https://www.pinterest.com/flavorspire/_created"
+PROFILE_URL = "https://www.pinterest.com/mollyshomeguide/_created"
 OUTPUT_DIR = "output"
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "pinterest_final_data.csv")
 
 # BATCH SETTINGS
 SKIP_COUNT = 0           # Kitne pins skip karne hain
-TARGET_COUNT = 5000      # Kitne pins extract karne hain
+TARGET_COUNT = 30000      # Kitne pins extract karne hain
 
 # PERFORMANCE SETTINGS
-CONCURRENT_TASKS = 15    # Parallel tasks for details extraction
+CONCURRENT_TASKS = 40    # Parallel tasks for details extraction
 HEADLESS = True
 MAX_RETRIES = 2
 SCROLL_DELAY = 2.0
