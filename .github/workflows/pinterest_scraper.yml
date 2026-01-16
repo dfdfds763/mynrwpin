@@ -5,18 +5,22 @@ on:
   workflow_dispatch:
   
   # Schedule - har din 12:00 UTC pe automatically run hoga (optional)
-  # Agar nahi chahiye to neeche ki 2 lines comment kar dein
   schedule:
-    - cron: '0 12 * * *'  # Har din 12:00 UTC (customize kar sakte hain)
+    - cron: '0 12 * * *'  # Har din 12:00 UTC
 
 jobs:
   scrape-pinterest:
     runs-on: ubuntu-latest
+    # Permissions are required for the GITHUB_TOKEN to push changes
+    permissions:
+      contents: write
     
     steps:
       # Step 1: Repository checkout
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for all branches and tags
       
       # Step 2: Python setup
       - name: Setup Python
@@ -40,19 +44,34 @@ jobs:
       # Step 5: Upload results as artifact
       - name: Upload Results
         uses: actions/upload-artifact@v4
-        if: always()  # Chahe error ho ya na ho, results upload honge
+        if: always()
         with:
           name: pinterest-data-${{ github.run_number }}
-          path: output/  # Ab ye output folder ko upload karega
-          retention-days: 30  # 30 din tak results save rahenge
+          path: output/
+          retention-days: 30
       
-      # Step 6: Commit results back to repository (optional)
-      # Agar chahte hain ke results automatically repository me save hon
-      - name: Commit Results to Repository
+      # Step 6: Commit results back to repository
+      - name: Commit and Push Results
         if: success()
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add output/pinterest_turbo_data.csv || true
-          git diff --quiet && git diff --staged --quiet || git commit -m "Updated Pinterest data - Run #${{ github.run_number }}"
-          git push || true
+          
+          # Ensure output directory is tracked
+          mkdir -p output
+          
+          # Add the file
+          git add output/pinterest_turbo_data.csv
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Updated Pinterest data - Run #${{ github.run_number }}"
+            
+            # Pull latest changes to avoid conflicts before pushing
+            git pull --rebase origin ${{ github.ref_name }}
+            
+            # Push the changes
+            git push origin ${{ github.ref_name }}
+          fi
