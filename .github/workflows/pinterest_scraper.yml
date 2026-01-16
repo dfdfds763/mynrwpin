@@ -1,0 +1,58 @@
+name: Pinterest Scraper Automation
+
+on:
+  # Manual trigger - jab chahe run kar sakte hain
+  workflow_dispatch:
+  
+  # Schedule - har din 12:00 UTC pe automatically run hoga (optional)
+  # Agar nahi chahiye to neeche ki 2 lines comment kar dein
+  schedule:
+    - cron: '0 12 * * *'  # Har din 12:00 UTC (customize kar sakte hain)
+
+jobs:
+  scrape-pinterest:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Repository checkout
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      # Step 2: Python setup
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      # Step 3: Install dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          python -m playwright install chromium
+          python -m playwright install-deps
+      
+      # Step 4: Run scraper script
+      - name: Run Pinterest Scraper
+        run: |
+          python pinterest_scraper.py
+      
+      # Step 5: Upload results as artifact
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        if: always()  # Chahe error ho ya na ho, results upload honge
+        with:
+          name: pinterest-data-${{ github.run_number }}
+          path: pinterest_turbo_data.csv
+          retention-days: 30  # 30 din tak results save rahenge
+      
+      # Step 6: Commit results back to repository (optional)
+      # Agar chahte hain ke results automatically repository me save hon
+      - name: Commit Results to Repository
+        if: success()
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add pinterest_turbo_data.csv || true
+          git diff --quiet && git diff --staged --quiet || git commit -m "Updated Pinterest data - Run #${{ github.run_number }}"
+          git push || true
