@@ -25,7 +25,8 @@ import sys
 
 # --- CONFIGURATION ---
 PROFILE_URL = "https://www.pinterest.com/purba43w/_created/"
-OUTPUT_FILE = "pinterest_turbo_data.csv"
+OUTPUT_DIR = "output"
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "pinterest_turbo_data.csv")
 
 # BATCH SETTINGS
 SKIP_COUNT = 0           # Kitne pins skip karne hain
@@ -130,12 +131,12 @@ async def extract_urls_turbo(profile_url, skip, target):
     """
     new_urls = []
     async with async_playwright() as p:
-        print(f"\n{'='*70}")
+        print(f"\\n{'='*70}")
         print(f"🚀 PINTEREST TURBO SCRAPER - HIGH PERFORMANCE")
         print(f"{'='*70}")
         print(f"📊 Profile: {profile_url}")
         print(f"⏭️  Skip: {skip} | 🎯 Target: {target} | ⚡ Concurrency: {CONCURRENT_TASKS}")
-        print(f"⏳ Step 1: Collecting URLs (Please wait)...\n")
+        print(f"⏳ Step 1: Collecting URLs (Please wait)...\\n")
         
         browser = await p.chromium.launch(headless=HEADLESS)
         page = await browser.new_page()
@@ -173,7 +174,7 @@ async def extract_urls_turbo(profile_url, skip, target):
                 
                 # Agar NO_NEW_PINS_WAIT attempts tak naye pins nahi mile to stop kar do
                 if no_new_pins_count >= NO_NEW_PINS_WAIT:
-                    print(f"\n   ⚠️  No new pins after {NO_NEW_PINS_WAIT} attempts. Stopping with {len(new_urls)} pins.")
+                    print(f"\\n   ⚠️  No new pins after {NO_NEW_PINS_WAIT} attempts. Stopping with {len(new_urls)} pins.")
                     break
             else:
                 no_new_pins_count = 0  # Reset counter agar naye pins mil gaye
@@ -189,16 +190,21 @@ async def extract_urls_turbo(profile_url, skip, target):
         
         # Final message
         if len(new_urls) < target:
-            print(f"\n\n⚠️  Target was {target} pins, but only {len(new_urls)} pins available.")
+            print(f"\\n\\n⚠️  Target was {target} pins, but only {len(new_urls)} pins available.")
             print(f"✅ Proceeding with {len(new_urls)} pins for processing.")
         else:
-            print(f"\n\n✅ URL Collection Complete: {len(new_urls)} pins ready for processing.")
+            print(f"\\n\\n✅ URL Collection Complete: {len(new_urls)} pins ready for processing.")
     
     return new_urls
 
 async def main():
     start_time = datetime.now()
     
+    # Ensure output directory exists
+    if not os.path.exists(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR)
+        print(f"📁 Created directory: {OUTPUT_DIR}")
+
     # Step 1: Get URLs
     urls_to_process = await extract_urls_turbo(PROFILE_URL, SKIP_COUNT, TARGET_COUNT)
     
@@ -207,7 +213,7 @@ async def main():
         return
 
     # Step 2: Parallel Processing
-    print(f"\n⏳ Step 2: Extracting Details (Parallel Mode: {CONCURRENT_TASKS} tasks)...\n")
+    print(f"\\n⏳ Step 2: Extracting Details (Parallel Mode: {CONCURRENT_TASKS} tasks)...\\n")
     
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=HEADLESS)
@@ -226,13 +232,13 @@ async def main():
             writer.writerows(results)
         
         elapsed = (datetime.now() - start_time).total_seconds()
-        print(f"\n\n{'='*70}")
+        print(f"\\n\\n{'='*70}")
         print(f"✅ TURBO SCRAPING COMPLETE!")
         print(f"📊 Total Pins Extracted: {len(results)}")
         print(f"⏱️  Total Time: {elapsed:.1f} seconds")
         print(f"🚀 Average Speed: {elapsed/len(results):.2f}s per pin")
         print(f"📁 Output File: {OUTPUT_FILE}")
-        print(f"{'='*70}\n")
+        print(f"{'='*70}\\n")
 
 if __name__ == "__main__":
     asyncio.run(main())
