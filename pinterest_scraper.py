@@ -1,17 +1,12 @@
 """
-Pinterest Turbo Scraper - High Performance Parallel Edition
-============================================================
-Ye script 5,000-10,000 pins ko fast parallel processing ke saath 
-extract karti hai. Agar profile me kam pins hain to jo bhi available 
-hain wo sab fetch kar leti hai aur kuch seconds wait karne ke baad 
-complete kar deti hai.
+Pinterest Integrated Scraper - URL, Title & Saves
+=================================================
+Ye script profile se pins collect karti hai aur phir har pin ke 
+Title aur Saves count extract karke aik single CSV file me save karti hai.
 
 Requirements:
     pip install playwright
     python -m playwright install chromium
-
-Usage:
-    python pinterest_scraper.py
 """
 
 import asyncio
@@ -19,27 +14,25 @@ import csv
 import re
 from playwright.async_api import async_playwright
 from datetime import datetime
-import json
 import os
 import sys
 
 # --- CONFIGURATION ---
 PROFILE_URL = "https://www.pinterest.com/purba43w/_created/"
 OUTPUT_DIR = "output"
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "pinterest_turbo_data.csv")
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "pinterest_final_data.csv")
 
 # BATCH SETTINGS
 SKIP_COUNT = 0           # Kitne pins skip karne hain
-TARGET_COUNT = 5000      # Kitne naye pins extract karne hain (5k ya 10k set kar sakte hain)
+TARGET_COUNT = 5000      # Kitne pins extract karne hain
 
-# PERFORMANCE SETTINGS (TURBO MODE)
-CONCURRENT_TASKS = 30    # Aik saath 30 pins process karein
+# PERFORMANCE SETTINGS
+CONCURRENT_TASKS = 15    # Parallel tasks for details extraction
 HEADLESS = True
 MAX_RETRIES = 2
-PAGE_LOAD_WAIT = 2.0     # Reduced wait for speed
 SCROLL_DELAY = 2.0
 MAX_SCROLL_ATTEMPTS = 2000
-NO_NEW_PINS_WAIT = 5     # Agar naye pins nahi mile to kitne seconds wait karein
+NO_NEW_PINS_WAIT = 5
 # ---------------------
 
 # Global results
@@ -47,9 +40,9 @@ results = []
 results_lock = asyncio.Lock()
 processed_count = 0
 
-async def get_pin_details_turbo(browser, url, semaphore, task_id):
+async def get_pin_details_integrated(browser, url, semaphore, task_id):
     """
-    High-speed parallel extraction for pin details
+    Extract Title and Saves count for a specific Pin URL
     """
     global processed_count
     async with semaphore:
@@ -57,25 +50,21 @@ async def get_pin_details_turbo(browser, url, semaphore, task_id):
         while retry_count <= MAX_RETRIES:
             context = None
             try:
-                # Har task ke liye optimized context
                 context = await browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    java_script_enabled=True
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 )
                 page = await context.new_page()
                 
-                # Speed optimization: Block images and CSS if only metadata is needed
-                # (Optional: uncomment if you want even more speed)
+                # Speed optimization: Block unnecessary resources
                 # await page.route("**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}", lambda route: route.abort())
                 
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(1) # Small wait for dynamic content
                 
-                # Title & Date extraction using fast JS evaluation
+                # 1. Extract Title and Date using JS
                 data = await page.evaluate("""() => {
                     let title = "N/A";
                     let date = "N/A";
-                    
-                    // Title extraction
                     const h1 = document.querySelector('h1');
                     if (h1 && h1.innerText && !h1.innerText.startsWith('Pin on')) {
                         title = h1.innerText.trim();
@@ -83,8 +72,6 @@ async def get_pin_details_turbo(browser, url, semaphore, task_id):
                         const ogTitle = document.querySelector('meta[property="og:title"]');
                         if (ogTitle) title = ogTitle.content.replace(' - Pinterest', '').trim();
                     }
-                    
-                    // Date extraction from JSON-LD or meta
                     const scripts = document.querySelectorAll('script[type="application/ld+json"]');
                     for (let s of scripts) {
                         try {
@@ -93,24 +80,38 @@ async def get_pin_details_turbo(browser, url, semaphore, task_id):
                             if (json.uploadDate) { date = json.uploadDate; break; }
                         } catch(e) {}
                     }
-                    
-                    if (date === "N/A") {
-                        const createdAt = document.body.innerHTML.match(/"created_at":\s*"([^"]+)"/);
-                        if (createdAt) date = createdAt[1];
-                    }
-                    
                     return { title, date };
                 }""")
+
+                # 2. Extract Saves Count using Regex on page content
+                content = await page.content()
+                patterns = [
+                    r'"saves"[:\s]+(\d+)',
+                    r'"aggregated_pin_data"[^}]*"saves"[:\s]+(\d+)',
+                    r'"save_count"[:\s]+(\d+)',
+                    r'saves["\s:]+(\d+)',
+                    r'(\d+)\s+saves',
+                    r'"repinCount"[:\s]+(\d+)',
+                ]
+                
+                saves_count = "N/A"
+                for pattern in patterns:
+                    matches = re.findall(pattern, content, re.IGNORECASE)
+                    if matches:
+                        saves_count = max([int(m) for m in matches])
+                        break
                 
                 async with results_lock:
                     results.append({
                         'url': url,
                         'title': data['title'],
-                        'upload_date': data['date']
+                        'saves': saves_count,
+                        'upload_date': data['date'],
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     })
                     processed_count += 1
-                    if processed_count % 10 == 0:
-                        print(f"   ⚡ Processed {processed_count} pins...", end='\r')
+                    status = f"✓ {saves_count}" if isinstance(saves_count, int) else f"⚠ {saves_count}"
+                    print(f"   [{processed_count}] {status} | {data['title'][:30]}... | {url}")
                 
                 return
                 
@@ -118,25 +119,27 @@ async def get_pin_details_turbo(browser, url, semaphore, task_id):
                 retry_count += 1
                 if retry_count > MAX_RETRIES:
                     async with results_lock:
-                        results.append({'url': url, 'title': "Error", 'upload_date': "N/A"})
+                        results.append({
+                            'url': url, 'title': "Error", 'saves': "Error", 
+                            'upload_date': "N/A", 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        })
                         processed_count += 1
                 else:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(2)
             finally:
                 if context: await context.close()
 
 async def extract_urls_turbo(profile_url, skip, target):
     """
-    Fast URL extraction from profile - agar target se kam pins hain to jo bhi available hain wo sab fetch karta hai
+    Collect Pin URLs from the profile page
     """
     new_urls = []
     async with async_playwright() as p:
         print(f"\\n{'='*70}")
-        print(f"🚀 PINTEREST TURBO SCRAPER - HIGH PERFORMANCE")
+        print(f"🚀 PINTEREST INTEGRATED SCRAPER")
         print(f"{'='*70}")
         print(f"📊 Profile: {profile_url}")
-        print(f"⏭️  Skip: {skip} | 🎯 Target: {target} | ⚡ Concurrency: {CONCURRENT_TASKS}")
-        print(f"⏳ Step 1: Collecting URLs (Please wait)...\\n")
+        print(f"⏳ Step 1: Collecting URLs...\\n")
         
         browser = await p.chromium.launch(headless=HEADLESS)
         page = await browser.new_page()
@@ -148,7 +151,6 @@ async def extract_urls_turbo(profile_url, skip, target):
         no_new_pins_count = 0
         previous_count = 0
         
-        # Jab tak target achieve na ho ya phir pins khatam na ho jaye
         while scrolls < MAX_SCROLL_ATTEMPTS:
             links = await page.query_selector_all('a[href*="/pin/"]')
             for link in links:
@@ -160,50 +162,33 @@ async def extract_urls_turbo(profile_url, skip, target):
                         all_urls.append(url)
                         if len(all_urls) > skip:
                             new_urls.append(url)
-                            if len(new_urls) >= target: 
-                                break
+                            if len(new_urls) >= target: break
             
-            # Agar target achieve ho gaya to break
-            if len(new_urls) >= target: 
-                break
+            if len(new_urls) >= target: break
             
-            # Check karo ke naye pins mil rahe hain ya nahi
             if len(new_urls) == previous_count:
                 no_new_pins_count += 1
-                print(f"   ⏸️  No new pins found (attempt {no_new_pins_count}/{NO_NEW_PINS_WAIT})...", end='\r')
-                
-                # Agar NO_NEW_PINS_WAIT attempts tak naye pins nahi mile to stop kar do
-                if no_new_pins_count >= NO_NEW_PINS_WAIT:
-                    print(f"\\n   ⚠️  No new pins after {NO_NEW_PINS_WAIT} attempts. Stopping with {len(new_urls)} pins.")
-                    break
+                if no_new_pins_count >= NO_NEW_PINS_WAIT: break
             else:
-                no_new_pins_count = 0  # Reset counter agar naye pins mil gaye
+                no_new_pins_count = 0
             
             previous_count = len(new_urls)
-            print(f"   🔍 Found {len(all_urls)} total pins... ({len(new_urls)} new)", end='\r')
+            print(f"   🔍 Found {len(all_urls)} total pins... ({len(new_urls)} new)", end='\\r')
             
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await asyncio.sleep(SCROLL_DELAY)
             scrolls += 1
             
         await browser.close()
-        
-        # Final message
-        if len(new_urls) < target:
-            print(f"\\n\\n⚠️  Target was {target} pins, but only {len(new_urls)} pins available.")
-            print(f"✅ Proceeding with {len(new_urls)} pins for processing.")
-        else:
-            print(f"\\n\\n✅ URL Collection Complete: {len(new_urls)} pins ready for processing.")
+        print(f"\\n\\n✅ URL Collection Complete: {len(new_urls)} pins ready.")
     
     return new_urls
 
 async def main():
     start_time = datetime.now()
     
-    # Ensure output directory exists
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
-        print(f"📁 Created directory: {OUTPUT_DIR}")
 
     # Step 1: Get URLs
     urls_to_process = await extract_urls_turbo(PROFILE_URL, SKIP_COUNT, TARGET_COUNT)
@@ -212,31 +197,29 @@ async def main():
         print("❌ No pins found!")
         return
 
-    # Step 2: Parallel Processing
+    # Step 2: Extract Details (Title + Saves)
     print(f"\\n⏳ Step 2: Extracting Details (Parallel Mode: {CONCURRENT_TASKS} tasks)...\\n")
     
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=HEADLESS)
         semaphore = asyncio.Semaphore(CONCURRENT_TASKS)
         
-        tasks = [get_pin_details_turbo(browser, url, semaphore, i) for i, url in enumerate(urls_to_process)]
+        tasks = [get_pin_details_integrated(browser, url, semaphore, i) for i, url in enumerate(urls_to_process)]
         await asyncio.gather(*tasks)
         await browser.close()
 
     # Step 3: Save Results
     if results:
-        file_exists = os.path.isfile(OUTPUT_FILE)
-        with open(OUTPUT_FILE, 'a' if file_exists else 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=['url', 'title', 'upload_date'])
-            if not file_exists: writer.writeheader()
+        with open(OUTPUT_FILE, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=['url', 'title', 'saves', 'upload_date', 'timestamp'])
+            writer.writeheader()
             writer.writerows(results)
         
         elapsed = (datetime.now() - start_time).total_seconds()
         print(f"\\n\\n{'='*70}")
-        print(f"✅ TURBO SCRAPING COMPLETE!")
-        print(f"📊 Total Pins Extracted: {len(results)}")
+        print(f"✅ SCRAPING COMPLETE!")
+        print(f"📊 Total Pins: {len(results)}")
         print(f"⏱️  Total Time: {elapsed:.1f} seconds")
-        print(f"🚀 Average Speed: {elapsed/len(results):.2f}s per pin")
         print(f"📁 Output File: {OUTPUT_FILE}")
         print(f"{'='*70}\\n")
 
