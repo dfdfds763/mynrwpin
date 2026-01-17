@@ -21,7 +21,7 @@ import sys
 
 # --- CONFIGURATION ---
 # Profile URL (can be /_saved/ or a specific board URL)
-PROFILE_URL = "https://www.pinterest.com/bnjweigel/_saved/"
+PROFILE_URL = "https://www.pinterest.com/lilchris3829/pins/"
 OUTPUT_DIR = "output"
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "pinterest_final_data.csv")
 
