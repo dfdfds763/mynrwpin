@@ -1,4 +1,4 @@
-name: Pinterest Scraper Automation
+name: Pinterest Ultra-Fast Scraper
 
 on:
   workflow_dispatch:
@@ -8,6 +8,8 @@ on:
 jobs:
   scrape-pinterest:
     runs-on: ubuntu-latest
+    # Set timeout to 6 hours as requested
+    timeout-minutes: 360
     permissions:
       contents: write
     
@@ -31,6 +33,8 @@ jobs:
       
       - name: Run Pinterest Scraper
         run: |
+          # Increase system limits for high concurrency
+          ulimit -n 4096
           python pinterest_scraper.py
       
       - name: Upload Results
@@ -53,7 +57,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Updated Pinterest data (URLs, Titles, Saves) - Run #${{ github.run_number }}"
+            git commit -m "Ultra-Fast Scrape Update - Run #${{ github.run_number }}"
             git pull --rebase origin ${{ github.ref_name }}
             git push origin ${{ github.ref_name }}
           fi
