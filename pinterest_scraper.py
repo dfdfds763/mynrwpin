@@ -9,6 +9,7 @@ Key Features:
 - Deep Collection: Automatically discovers pins inside boards.
 - Overlapping Parallelism: URL milte hi detail extraction shuru ho jati hai.
 - High Concurrency: 40-50 parallel tasks.
+- Duplicate Removal: Same Title aur Saves wale pins ko remove kar diya jata hai.
 """
 
 import asyncio
@@ -40,6 +41,7 @@ NO_NEW_PINS_WAIT = 15    # Wait longer for large profiles
 # Global state
 results = []
 seen_urls = set()
+seen_content = set() # To track (title, saves) duplicates
 queue = asyncio.Queue()
 processed_count = 0
 extraction_done = asyncio.Event()
@@ -106,24 +108,32 @@ async def get_pin_details_worker(browser, semaphore):
                             saves_count = max([int(m) for m in matches])
                             break
                     
+                    # Check for duplicates based on Title and Saves
+                    content_key = (title[:200], saves_count)
+                    
                     async with results_lock:
-                        results.append({
-                            'url': url,
-                            'title': title[:200],
-                            'saves': saves_count,
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        })
-                        processed_count += 1
-                        if processed_count % 5 == 0:
-                            print(f"   ⚡ Processed {processed_count} pins... (Queue: {queue.qsize()})", end='\r')
+                        if content_key not in seen_content:
+                            seen_content.add(content_key)
+                            results.append({
+                                'url': url,
+                                'title': title[:200],
+                                'saves': saves_count,
+                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            })
+                            processed_count += 1
+                            if processed_count % 5 == 0:
+                                print(f"   ⚡ Processed {processed_count} unique pins... (Queue: {queue.qsize()})", end='\r')
+                        else:
+                            # Skip duplicate content
+                            pass
                     
                     success = True
                 except Exception:
                     retry_count += 1
                     if retry_count > MAX_RETRIES:
-                        async with results_lock:
-                            results.append({'url': url, 'title': "Error", 'saves': "Error", 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
-                            processed_count += 1
+                        # We don't add "Error" entries to seen_content to avoid blocking potential retries or similar titles
+                        # But for clean data, maybe we should just skip errors or log them differently
+                        pass 
                     else:
                         await asyncio.sleep(2)
                 finally:
@@ -170,8 +180,6 @@ async def url_collector(profile_url):
                     board_url = f"https://www.pinterest.com{b_href}"
                     if board_url not in discovered_boards:
                         discovered_boards.add(board_url)
-                        # Optional: You could recursively crawl boards here, 
-                        # but usually scrolling the main page loads pins from all boards.
             
             if len(seen_urls) >= TARGET_COUNT:
                 break
@@ -198,7 +206,7 @@ async def url_collector(profile_url):
             
         await browser.close()
         extraction_done.set()
-        print(f"\n✅ URL Collection Finished. Total Unique Pins: {len(seen_urls)}")
+        print(f"\n✅ URL Collection Finished. Total Unique URLs: {len(seen_urls)}")
 
 async def main():
     start_time = datetime.now()
@@ -237,7 +245,7 @@ async def main():
         elapsed = (datetime.now() - start_time).total_seconds()
         print(f"\n\n{'='*70}")
         print(f"✅ ULTRA-RELIABLE SCRAPING COMPLETE!")
-        print(f"📊 Total Pins: {len(results)}")
+        print(f"📊 Total Unique Pins (by Title & Saves): {len(results)}")
         print(f"⏱️  Total Time: {elapsed/60:.1f} minutes")
         print(f"🚀 Speed: {len(results)/(elapsed/3600):.0f} pins per hour")
         print(f"📁 Output File: {OUTPUT_FILE}")
